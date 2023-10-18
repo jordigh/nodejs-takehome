@@ -15,18 +15,24 @@
     "graphql-tag": "^2.12.6",
     "koa": "^2.14.2",
     "koa-bodyparser": "^4.4.0",
-    "mongodb": "^4.17.0"
+    "mongodb": "^4.17.0",
+    "uuid": "^9.0.1"
   },
   "engines": {
     "node": ">=14"
-  },
-  "devDependencies": {
-    "@newrelic/eslint-config": "^0.2.0"
   },
   "scripts": {
     "start": "node server.js",
     "debug": "node --inspect-brk server.js",
     "test": "tap"
   },
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-config-sonarjs": "^1.2.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "prettier": "3.0.3",
+    "tap": "^18.5.1"
+  }
 }
