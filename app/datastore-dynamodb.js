@@ -10,19 +10,28 @@ import {
   waitUntilTableExists,
   waitUntilTableNotExists
 } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
-import { generateUsers } from './utils.js'
+import { v4 as uuid } from 'uuid'
+import {
+  DynamoDBDocumentClient,
+  ScanCommand,
+  GetCommand,
+  PutCommand,
+  BatchWriteCommand,
+  DeleteCommand,
+  UpdateCommand
+} from '@aws-sdk/lib-dynamodb'
+import { generateTransactions, methodCodes } from './utils.js'
 
 const tableParams = {
   AttributeDefinitions: [
     {
-      AttributeName: 'id',
-      AttributeType: 'N'
+      AttributeName: '_id',
+      AttributeType: 'S'
     }
   ],
   KeySchema: [
     {
-      AttributeName: 'id',
+      AttributeName: '_id',
       KeyType: 'HASH'
     }
   ],
@@ -30,7 +39,7 @@ const tableParams = {
     ReadCapacityUnits: 1,
     WriteCapacityUnits: 1
   },
-  TableName: 'Users',
+  TableName: 'Transactions',
   StreamSpecification: {
     StreamEnabled: false
   }
@@ -39,40 +48,155 @@ const tableParams = {
 async function initData() {
   const client = new Client({})
   try {
-    console.log('Deleting table...')
-    await client.send(new DeleteTableCommand({ TableName: 'Users' }))
-    await waitUntilTableNotExists({ client }, { TableName: 'Users' })
+    await client.send(new DeleteTableCommand({ TableName: 'Transactions' }))
+    await waitUntilTableNotExists({ client }, { TableName: 'Transactions' })
   } catch (err) {
+    // This is just to keep going in case the table doesn't exist,
+    // make it known that this happened.
     console.log(err.message)
   }
-  console.log('Creating table...')
   await client.send(new CreateTableCommand(tableParams))
-  await waitUntilTableExists({ client }, { TableName: 'Users' })
+  await waitUntilTableExists({ client }, { TableName: 'Transactions' })
 
-  console.log('Adding users...')
   const docClient = DynamoDBDocumentClient.from(client)
-  const users = generateUsers(10)
-  for (const user of users) {
-    user.id = user._id
+  const transactions = generateTransactions(50)
+  const chunkSize = 25
+  for (let i = 0; i < transactions.length; i += chunkSize) {
+    const chunk = transactions.slice(i, i + chunkSize)
+    for (const transaction of chunk) {
+      transaction._id = uuid()
+      transaction.date = transaction.date.toISOString()
+    }
+    const putRequests = chunk.map((txn) => ({ PutRequest: { Item: txn } }))
     await docClient.send(
-      new PutCommand({
-        TableName: 'Users',
-        Item: user
+      new BatchWriteCommand({
+        RequestItems: {
+          Transactions: putRequests
+        }
       })
     )
   }
-  console.log('added 10 users')
 }
 
-async function getUserById(id) {
+async function getTransactionById(_id) {
   const client = DynamoDBDocumentClient.from(new Client({}))
-  const { Item: item } = await client.send(
+  const { Item: txn } = await client.send(
     new GetCommand({
-      TableName: 'Users',
-      Key: { id }
+      TableName: 'Transactions',
+      Key: { _id }
     })
   )
-  return item
+  if (txn) {
+    txn.date = new Date(Date.parse(txn.date))
+  }
+  return txn
 }
 
-export { getUserById, initData }
+async function getAllTransactions(methodName) {
+  let query
+  if (!methodName) {
+    query = {}
+  } else if (methodName === 'Incoming') {
+    query = {
+      FilterExpression: '#amt >= :zero AND #code = :null',
+      ExpressionAttributeNames: { '#amt': 'amount', '#code': 'methodCode' },
+      ExpressionAttributeValues: { ':zero': 0, ':null': null }
+    }
+  } else if (methodName === 'Outgoing') {
+    query = {
+      FilterExpression: '#amt < :zero AND #code = :null',
+      ExpressionAttributeNames: { '#amt': 'amount', '#code': 'methodCode' },
+      ExpressionAttributeValues: { ':zero': 0, ':null': null }
+    }
+  } else {
+    query = {
+      FilterExpression: '#code = :name',
+      ExpressionAttributeNames: { '#code': 'methodCode' },
+      ExpressionAttributeValues: { ':name': methodCodes[methodName] }
+    }
+  }
+
+  const client = DynamoDBDocumentClient.from(new Client({}))
+
+  const response = await client.send(
+    new ScanCommand({
+      TableName: 'Transactions',
+      ...query
+    })
+  )
+  response.Items.forEach((txn) => (txn.date = new Date(Date.parse(txn.date))))
+  return response.Items
+}
+
+async function getBalance() {
+  // Some day we'll use hadoop
+  const txns = await getAllTransactions()
+  return txns.reduce((sum, txn) => sum + txn.amount, 0)
+}
+
+async function addTransaction(transaction) {
+  transaction._id = uuid()
+  transaction.date = transaction.date.toISOString()
+  const client = DynamoDBDocumentClient.from(new Client({}))
+  await client.send(
+    new PutCommand({
+      TableName: 'Transactions',
+      Item: transaction
+    })
+  )
+  return transaction._id
+}
+
+async function updateTransaction(query) {
+  const client = DynamoDBDocumentClient.from(new Client({}))
+  const _id = query._id
+  const values = {}
+  const assignments = []
+  for (const [key, value] of Object.entries(query)) {
+    if (key !== '_id' && value !== undefined) {
+      values[`:${key}`] = value
+      assignments.push(`${key}=:${key}`)
+    }
+  }
+  if (!values) {
+    return false
+  }
+
+  const response = await client.send(
+    new UpdateCommand({
+      TableName: 'Transactions',
+      Key: { _id },
+      UpdateExpression: `SET ${assignments.join(', ')}`,
+      ExpressionAttributeValues: values,
+      ReturnValues: 'ALL_NEW'
+    })
+  )
+  // This actually always works because UpdateCommand will happily
+  // upsert half-filled junk, thus corrupting the database, adding
+  // entries with nulls that the GraphQL schema says cannot be null.
+  //
+  // Some day I would fix this, but not today.
+  return response.Attributes !== undefined
+}
+
+async function deleteTransaction(_id) {
+  const client = DynamoDBDocumentClient.from(new Client({}))
+  const response = await client.send(
+    new DeleteCommand({
+      TableName: 'Transactions',
+      Key: { _id },
+      ReturnValues: 'ALL_OLD'
+    })
+  )
+  return response.Attributes !== undefined
+}
+
+export {
+  initData,
+  getTransactionById,
+  getAllTransactions,
+  getBalance,
+  addTransaction,
+  updateTransaction,
+  deleteTransaction
+}
