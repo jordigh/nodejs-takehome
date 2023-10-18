@@ -3,51 +3,103 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getUserById } from './datastore.js'
+import { GraphQLError } from 'graphql'
 
-function userQueryResolver(_, args) {
-  return args.id
-}
+import {
+  getAllTransactions,
+  getBalance,
+  addTransaction,
+  updateTransaction,
+  deleteTransaction
+} from './datastore.js'
 
-function allUsersQueryResolver() {
-  return new Array(10).fill(0).map((_, index) => index + 1)
-}
+import { methodNames } from './utils.js'
 
-async function getUser(ctx, id) {
-  if (process.env.NEW_RELIC_USE_DATALOADER) {
-    return await ctx.loaders.getUserById.load(id)
+const validMethodCodes = Object.keys(methodNames)
+const validMethodNames = ['Incoming', 'Outgoing', ...Object.values(methodNames)]
+const validStatuses = ['Pending', 'Posted']
+
+async function transactionQueryResolver(_, args, ctx) {
+  const result = await ctx.loaders.getTransactionById.load(args.id)
+  if (!result) {
+    throw new GraphQLError(`No transaction found with id ${args.id}`)
   }
-  return await getUserById(Number(id))
+  return result
 }
 
-const UserTypeResolver = {
-  age: async (id, _, ctx) => {
-    const user = await getUser(ctx, id)
-    return user.age
+const transactionTypeResolver = {
+  id(txn) {
+    return txn._id
   },
-  email: async (id, _, ctx) => {
-    const user = await getUser(ctx, id)
-    return user.email
+
+  date(txn) {
+    return txn.date.toISOString()
   },
-  hobbies: async (id, _, ctx) => {
-    const user = await getUser(ctx, id)
-    return user.hobbies
-  },
-  id: async (id, _, ctx) => {
-    const user = await getUser(ctx, id)
-    return user._id
-  },
-  name: async (id, _, ctx) => {
-    const user = await getUser(ctx, id)
-    return user.name
-  },
-  friends: async (id, _, ctx) => {
-    const user = await getUser(ctx, id)
-    return user.friends
+
+  methodName(txn) {
+    try {
+      if (txn.methodCode) {
+        return methodNames[txn.methodCode]
+      }
+      // Spec doesn't specify what to do with zero, but I find it more
+      // reassuring to think of "obtained zero income" more than "made
+      // zero payment".
+      if (txn.amount >= 0) {
+        return 'Incoming'
+      }
+      return 'Outgoing'
+    } catch {
+      throw new GraphQLError(`Could not fetch methodName field`)
+    }
   }
+}
+
+async function allTransactionsByMethodQueryResolver(_, args) {
+  const methodName = args.methodName
+  if (methodName && !validMethodNames.includes(methodName)) {
+    throw new GraphQLError(
+      `Invalid methodName: ${methodName} not one of ${validMethodNames.join(', ')}`
+    )
+  }
+  return await getAllTransactions(methodName)
+}
+
+async function balanceQueryResolver() {
+  return await getBalance()
+}
+
+async function addTransactionResolver(_, args) {
+  args.date = new Date(Date.parse(args.date))
+  if (!validStatuses.includes(args.status)) {
+    throw new GraphQLError(`Invalid status: ${args.status} not one of ${validStatuses.join(', ')}`)
+  }
+  if (args.methodCode && !validMethodCodes.includes(args.methodCode)) {
+    throw new GraphQLError(
+      `Invalid methodCode: ${args.methodCode} not one of ${validMethodCodes.join(', ')}`
+    )
+  }
+  return await addTransaction(args)
+}
+
+async function updateTransactionResolver(_, args) {
+  return await updateTransaction({ _id: args.id, amount: args.amount, note: args.note })
+}
+
+async function deleteTransactionResolver(_, args) {
+  return await deleteTransaction(args.id)
 }
 
 export default {
-  Query: { user: userQueryResolver, allUsers: allUsersQueryResolver },
-  User: UserTypeResolver
+  Query: {
+    transaction: transactionQueryResolver,
+    allTransactions: allTransactionsByMethodQueryResolver,
+    allTransactionsByMethod: allTransactionsByMethodQueryResolver,
+    balance: balanceQueryResolver
+  },
+  Mutation: {
+    addTransaction: addTransactionResolver,
+    updateTransaction: updateTransactionResolver,
+    deleteTransaction: deleteTransactionResolver
+  },
+  Transaction: transactionTypeResolver
 }
