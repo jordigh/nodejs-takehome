@@ -4,12 +4,12 @@
  */
 
 import DataLoader from 'dataloader'
-import { getUserById } from './datastore.js'
+import { getTransactionById } from './datastore.js'
 
 const loaders = () => ({
-  getUserById: new DataLoader(
+  getTransactionById: new DataLoader(
     (ids) => {
-      return Promise.all(ids.map((id) => getUserById(Number(id))))
+      return Promise.all(ids.map((id) => getTransactionById(id)))
     },
     {
       batchScheduleFn: (callback) => setTimeout(callback, 100)
