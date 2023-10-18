@@ -5,30 +5,40 @@
 
 import { faker } from '@faker-js/faker'
 
-const hobbies = [
-  'soccer',
-  'travelling',
-  'dancing',
-  'painting',
-  'sailing',
-  'fishing',
-  'movies',
-  'coding'
-]
+// Date on which Jordi first received this interview challenge
+faker.setDefaultRefDate(new Date('2023-10-16'))
 
-function generateUsers(count) {
-  let id = 1
-  const countToN = Array.from({ length: count }, (_, i) => i + 1)
+const methodCodesArr = ['12', '34', '56', '78', null]
+const statuses = ['Pending', 'Posted']
+
+function generateTransactions(count) {
   return new Array(count).fill(0).map(() => {
     return {
-      age: faker.number.int({ min: 20, max: 40 }),
-      email: faker.internet.email(),
-      hobbies: faker.helpers.arrayElements(hobbies, faker.number.int({ min: 1, max: 4 })),
-      _id: id++,
-      name: faker.person.fullName(),
-      friends: faker.helpers.arrayElements(countToN, faker.number.int({ min: 1, max: 7 }))
+      date: faker.date.past(),
+      amount: faker.number.int({ min: -500, max: 1000 }),
+      status: faker.helpers.arrayElement(statuses),
+      counterPartyName: faker.person.fullName(),
+      methodCode: faker.helpers.arrayElement(methodCodesArr),
+      // 25% of transactions should have a note
+      note: faker.datatype.boolean({ probability: 0.25 }) ? faker.lorem.words(20) : null
     }
   })
 }
 
-export { generateUsers }
+const methodNames = {
+  12: 'Card Purchase',
+  34: 'ACH',
+  56: 'Wire',
+  78: 'Fee'
+}
+
+// Yeah, a little silly to be writing this backwards manually, but a
+// little repetition doesn't hurt.
+const methodCodes = {
+  'Card Purchase': '12',
+  ACH: '34',
+  Wire: '56',
+  Fee: '78'
+}
+
+export { generateTransactions, methodNames, methodCodes }
