@@ -7,7 +7,8 @@ Below is what I wrote at the time when I submitted this code challenge.
 Get it running:
 
 1. Copy sample.env to .env
-2. Edit .env to pick one of two datastores. If using DynamoDB, you will need valid AWS credentials for a user with DynamoDB access.
+2. Edit .env to pick one of two datastores. 
+    * If using DynamoDB, you will need valid AWS credentials for a user with DynamoDB access. **WARNING**: the DynamoDB backend begins by deleting a table called `Transactions`, if it exists.
 3. Start with `docker compose up --build`.
 
 I take the output of the above process as a fulfillment of the requirement to have a console that demonstrates the output of my microservice.
