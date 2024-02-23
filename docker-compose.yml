@@ -8,7 +8,7 @@ services:
     ports:
       - "4000:4000"
     environment:
-      MONGO_URL: mongodb://newrelic:nrpass@mongo/
+      MONGO_URL: mongodb://nodejs:nodejspass@mongo/
     depends_on:
       - mongo
 
@@ -18,5 +18,5 @@ services:
     ports:
       - "4001:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: newrelic
-      MONGO_INITDB_ROOT_PASSWORD: nrpass
+      MONGO_INITDB_ROOT_USERNAME: nodejs
+      MONGO_INITDB_ROOT_PASSWORD: nodejspass

@@ -10,7 +10,6 @@ import cors from '@koa/cors'
 import { ApolloServer } from '@apollo/server'
 import { ApolloServerPluginDrainHttpServer as drain } from '@apollo/server/plugin/drainHttpServer'
 import { koaMiddleware } from '@as-integrations/koa'
-import createNewRelicPlugin from '@newrelic/apollo-server-plugin'
 
 import getContext from './context.js'
 import resolvers from './resolvers.js'
@@ -24,7 +23,7 @@ const httpServer = http.createServer(app.callback())
 const server = new ApolloServer({
   typeDefs,
   resolvers,
-  plugins: [drain({ httpServer }), createNewRelicPlugin({})]
+  plugins: [drain({ httpServer })]
 })
 await server.start()
 await initData()
